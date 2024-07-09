@@ -32,7 +32,7 @@ XMLHttpRequest.prototype.send = function (data) {
                     res = JSON.parse(this.response);
                     map = res.data[1].line_sharpness[0].ext;
                     var urls = map.host + "/" + map.path + "/playlist_eof.m3u8?" + map.param;
-                   // window.open("https://blog.luckly-mjw.cn/tool-show/m3u8-downloader/index.html?source=" + urls);
+                    window.open("https://blog.luckly-mjw.cn/tool-show/m3u8-downloader/index.html?source=" + urls);
                 }
                 window.postMessage({"urls": this.responseURL, "response": this.response}, '*');
 
