@@ -1,158 +1,206 @@
-// background.js
-chrome.contextMenus.create({
-    title: '使用度娘搜索：%s', // %s表示选中的文字
-    contexts: ['selection'], // 只有当选中文字时才会出现此右键菜单
-    onclick: function(params)
-    {
-        // 注意不能使用location.href，因为location是属于background的window对象
-        chrome.tabs.create({url: 'https://www.baidu.com/s?ie=utf-8&wd=' + encodeURI(params.selectionText)});
-    }
+const CAPTURE_LIMIT = 80;
+const CAPTURE_TTL_MS = 2 * 60 * 1000;
+const STORAGE_KEYS = {
+  captures: "captures",
+  settings: "settings",
+};
+
+const recentCaptureMap = new Map();
+
+chrome.runtime.onInstalled.addListener(async () => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "clear-m3u8-captures",
+      title: "清空已捕获的 m3u8 链接",
+      contexts: ["action"],
+    });
+  });
+
+  const { [STORAGE_KEYS.captures]: captures = [] } = await chrome.storage.local.get(
+    STORAGE_KEYS.captures,
+  );
+  await updateBadge(captures.length);
 });
 
-let url = "";
-let response = "";
-chrome.extension.onMessage.addListener(
-    function (request,sender,sendResponse){
-        if(request.action === "getData"){
-            sendResponse({"url":url,"response":response})
-        }
-        return true;
+chrome.runtime.onStartup.addListener(async () => {
+  const { [STORAGE_KEYS.captures]: captures = [] } = await chrome.storage.local.get(
+    STORAGE_KEYS.captures,
+  );
+  await updateBadge(captures.length);
+});
+
+chrome.contextMenus.onClicked.addListener(async (info) => {
+  if (info.menuItemId === "clear-m3u8-captures") {
+    await chrome.storage.local.set({ [STORAGE_KEYS.captures]: [] });
+    recentCaptureMap.clear();
+    await updateBadge(0);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "deleteCapture") {
+    deleteCapture(message.id)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === "clearCaptures") {
+    chrome.storage.local
+      .set({ [STORAGE_KEYS.captures]: [] })
+      .then(() => {
+        recentCaptureMap.clear();
+        return updateBadge(0);
+      })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  return false;
+});
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (!details.url || !isPotentialM3u8Url(details.url)) {
+      return;
     }
-);
-chrome.extension.onMessage.addListener(
-    function (request,sender,sendRequest){
-        if(request.action === "removeData"){
-            url="";
-            response="";
-            sendRequest("done");
 
-        }
-        return true;
+    void captureRequest({
+      url: details.url,
+      source: "webRequest",
+      tabId: details.tabId,
+      pageUrl: details.initiator || details.documentUrl || "",
+      requestType: details.type,
+    });
+  },
+  { urls: ["<all_urls>"] },
+);
+
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    const contentType = getHeaderValue(details.responseHeaders, "content-type");
+    if (!isM3u8ContentType(contentType)) {
+      return;
     }
+
+    void captureRequest({
+      url: details.url,
+      source: "headers",
+      tabId: details.tabId,
+      pageUrl: details.initiator || details.documentUrl || "",
+      requestType: details.type,
+      contentType,
+    });
+  },
+  { urls: ["<all_urls>"] },
+  ["responseHeaders"],
 );
 
-chrome.runtime.onMessage.addListener(
-    (request, sender, sendResponse) => {
-        if (request.contentScriptQuery === 'path'){
-            chrome.storage.sync.get('total', function (budget) {
-                if (request.notifyOptions.urls && request.notifyOptions.response) {
-                    //request.notifyOptions.response.includes(budget.total)
-                    url = url + request.notifyOptions.urls + "<br>";
-                    response = response + request.notifyOptions.response + "<br>";
-                /*    chrome.notifications.create('notification-id', {
-                            // type 有四种类型，basic,image,simple,list
-                            type: 'basic',
-                            iconUrl: 'img/logo.png',
-                            title: '有一个信息',
-                            message: urls
-                        }, function callback(createdNotificationId) {
-                            // 通知创建成功后的回调
-                            console.log('Notification created with id: ' + createdNotificationId);
-                        }
-                    )*/
+async function captureRequest(entry) {
+  const normalizedUrl = normalizeUrl(entry.url);
+  const dedupeKey = `${entry.tabId}|${normalizedUrl}`;
+  const now = Date.now();
 
+  pruneRecentCaptureMap(now);
+  if (recentCaptureMap.has(dedupeKey)) {
+    return;
+  }
 
-                }
-            });
-        }
+  recentCaptureMap.set(dedupeKey, now);
 
+  const tabMeta = await getTabMeta(entry.tabId);
+  const capture = {
+    id: `${now}-${Math.random().toString(16).slice(2, 10)}`,
+    url: normalizedUrl,
+    pageUrl: entry.pageUrl || tabMeta.url || "",
+    pageTitle: tabMeta.title || "",
+    source: entry.source,
+    contentType: entry.contentType || "",
+    requestType: entry.requestType || "",
+    tabId: Number.isInteger(entry.tabId) ? entry.tabId : -1,
+    detectedAt: new Date(now).toISOString(),
+  };
 
-        if (request.contentScriptQuery === 'notification') {
-            const {
-                notifyOptions
-            } = request;
-            chrome.notifications.create('notify1', notifyOptions, (id) => {
-            //     alert(JSON.stringify(chrome.runtime)); // 如果没调成功可以在这里看看报错，在生产环境别忘了注释掉
-            });
-        }
-        console.log('Did not receive the response!!!');
-    });
+  const { [STORAGE_KEYS.captures]: currentCaptures = [] } = await chrome.storage.local.get(
+    STORAGE_KEYS.captures,
+  );
 
+  const nextCaptures = [capture, ...currentCaptures.filter((item) => item.url !== normalizedUrl)].slice(
+    0,
+    CAPTURE_LIMIT,
+  );
 
-// 使用 XMLHttpRequest 对象发送请求
-//const xhr = new XMLHttpRequest();
-//xhr.open('GET', 'https://www.zhihu.com/api/v4/articles/692824625/relationship?desktop=true', true);
-//xhr.send();
+  await chrome.storage.local.set({ [STORAGE_KEYS.captures]: nextCaptures });
+  await updateBadge(nextCaptures.length);
+}
 
-// 向页面注入JS
+async function deleteCapture(id) {
+  const { [STORAGE_KEYS.captures]: currentCaptures = [] } = await chrome.storage.local.get(
+    STORAGE_KEYS.captures,
+  );
+  const nextCaptures = currentCaptures.filter((item) => item.id !== id);
+  await chrome.storage.local.set({ [STORAGE_KEYS.captures]: nextCaptures });
+  await updateBadge(nextCaptures.length);
+}
 
-/*
+async function updateBadge(count) {
+  const badgeText = count > 0 ? String(Math.min(count, 99)) : "";
+  await chrome.action.setBadgeBackgroundColor({ color: "#cc5b2b" });
+  await chrome.action.setBadgeText({ text: badgeText });
+}
 
-// 创建一个原始的 fetch 函数的备份
-const originalFetch = window.fetch;
+function pruneRecentCaptureMap(now) {
+  for (const [key, timestamp] of recentCaptureMap.entries()) {
+    if (now - timestamp > CAPTURE_TTL_MS) {
+      recentCaptureMap.delete(key);
+    }
+  }
+}
 
-window.fetch = function (url, options) {
-    // 在请求发送前进行拦截处理
-    console.log('拦截请求:', url, options);
+function normalizeUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    url.hash = "";
+    return url.toString();
+  } catch (_error) {
+    return rawUrl;
+  }
+}
 
-    // 调用原始的 fetch 函数发送请求，并返回一个 Promise 对象
-    return originalFetch.apply(this, arguments)
-        .then(function (response) {
-            // 在响应返回后进行拦截处理
-            console.log('拦截响应:', response);
+function isPotentialM3u8Url(url) {
+  return /\.m3u8($|[?#])/i.test(url) || /(?:^|[?&=/._-])m3u8(?:$|[?&=/._-])/i.test(url);
+}
 
-            return response;
-        });
-};
+function isM3u8ContentType(contentType) {
+  if (!contentType) {
+    return false;
+  }
 
-// 使用 fetch 函数发送请求
-fetch('https://api.example.com')
-    .then(function (response) {
-        // 处理响应数据
-    })
-    .catch(function (error) {
-        // 处理错误信息
-    });
+  return /(application\/vnd\.apple\.mpegurl|application\/x-mpegurl|audio\/mpegurl)/i.test(contentType);
+}
 
+function getHeaderValue(headers, targetName) {
+  if (!Array.isArray(headers)) {
+    return "";
+  }
 
-// interceptorManager.js
-import axios from 'axios';
+  const header = headers.find((item) => item?.name?.toLowerCase() === targetName);
+  return header?.value || "";
+}
 
-const interceptorManager = {
-    registerInterceptor: (responseCallback) => {
-        axios.interceptors.response.use((response) => {
-            // 在响应数据处理前，将其传递给回调函数
-            responseCallback(response);
+async function getTabMeta(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    return {};
+  }
 
-            return response;
-        });
-    },
-
-    unregisterInterceptor: () => {
-        axios.interceptors.response.eject();
-    },
-};
-
-export default interceptorManager;
-*/
-/*
-
-// YourReactComponent.js
-import React, { useEffect, useState } from 'react';
-import interceptorManager from './interceptorManager';
-
-const YourReactComponent = () => {
-    const [responseData, setResponseData] = useState(null);
-
-    const handleResponse = (response) => {
-        // 处理响应数据
-        setResponseData(response.data);
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return {
+      title: tab.title || "",
+      url: tab.url || "",
     };
-
-    useEffect(() => {
-        interceptorManager.registerInterceptor(handleResponse);
-
-        return () => {
-            interceptorManager.unregisterInterceptor();
-        };
-    }, []);
-
-    return (
-        <div>
-            {/!* 使用 responseData 进行渲染 *!/}
-        </div>
-    );
-};
-
-export default YourReactComponent;
-*/
+  } catch (_error) {
+    return {};
+  }
+}

@@ -1,20 +1,101 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <meta charset="utf-8">
-    <style>
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M3U8 投屏助手</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
-<script src="jquery.min.js"></script>
-<h1>CQ</h1>
-<body style="width: 800px;height: 600px;">
-<h2>匹配项:<input type="text" id="amount">配置:<span id="total"></span><input type="submit" id="add" value="配置"></h2>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">M3U8 投屏助手</p>
+        <h1>抓流后直接推到小米电视</h1>
+        <p class="subtitle">监听页面里的 m3u8 请求，再通过 DLNA 把链接发给电视播放。</p>
+      </div>
+      <button id="refreshButton" class="ghost-button" type="button">刷新</button>
+    </header>
 
-<input type="submit" id="remove" value="清理">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>电视设置</h2>
+          <p class="panel-note">推荐先填写小米电视的 DLNA 描述地址，扩展会自动解析 AVTransport 控制地址。</p>
+        </div>
+        <span id="deviceStatus" class="status-pill">未配置</span>
+      </div>
 
-<div id="resValue"></div>
+      <label class="field">
+        <span>设备描述地址</span>
+        <input id="descriptionUrl" type="url" placeholder="http://192.168.1.20:49152/description.xml">
+      </label>
+
+      <label class="field">
+        <span>AVTransport 控制地址</span>
+        <input id="controlUrl" type="url" placeholder="也可以直接填写控制地址">
+      </label>
+
+      <label class="field">
+        <span>电视名称</span>
+        <input id="friendlyName" type="text" placeholder="例如：客厅小米电视">
+      </label>
+
+      <div class="actions">
+        <button id="resolveDeviceButton" type="button">解析设备</button>
+        <button id="saveSettingsButton" type="button">保存设置</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>手动投屏</h2>
+          <p class="panel-note">可以直接粘贴一个 m3u8 地址，或者从下面的捕获记录里选一个。</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>当前链接</span>
+        <textarea id="manualUrl" rows="4" placeholder="https://example.com/live/index.m3u8"></textarea>
+      </label>
+
+      <label class="field">
+        <span>显示标题</span>
+        <input id="manualTitle" type="text" placeholder="电视上显示的标题">
+      </label>
+
+      <div class="actions">
+        <button id="castManualButton" type="button">投屏当前链接</button>
+        <button id="copyManualButton" class="ghost-button" type="button">复制链接</button>
+      </div>
+
+      <p class="warning">如果该地址依赖 Cookie、Referer、鉴权 Header 或短时签名，电视可能无法直接拉流。</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>最近捕获</h2>
+          <p id="captureSummary" class="panel-note">暂无记录</p>
+        </div>
+        <div class="actions compact">
+          <button id="castLatestButton" type="button">投屏最新</button>
+          <button id="clearCapturesButton" class="ghost-button" type="button">清空</button>
+        </div>
+      </div>
+
+      <div id="captureList" class="capture-list empty">
+        <div class="empty-state">
+          <strong>还没有捕获到 m3u8 链接</strong>
+          <p>打开视频页面并开始播放，扩展会自动监听请求。</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <script src="popup.js"></script>
 </body>
-<script src="context.js"></script>
-
-
 </html>

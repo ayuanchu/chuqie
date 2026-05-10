@@ -1,6 +1,5 @@
 {
-  "name": "chrome-extension-basic-demo",
-  "version": "1.0.0",
-  "dependencies": {
-  }
+  "name": "m3u8-cast-extension",
+  "version": "2.0.0",
+  "private": true
 }
