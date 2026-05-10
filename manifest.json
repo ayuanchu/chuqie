@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "M3U8 投屏助手",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "监听页面中的 m3u8 请求，并通过 DLNA 将链接推送到小米电视。",
   "permissions": [
     "contextMenus",

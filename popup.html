@@ -10,9 +10,9 @@
   <main class="app">
     <header class="hero">
       <div>
-        <p class="eyebrow">M3U8 投屏助手</p>
-        <h1>抓流后直接推到小米电视</h1>
-        <p class="subtitle">监听页面里的 m3u8 请求，再通过 DLNA 把链接发给电视播放。</p>
+        <p class="eyebrow">M3U8 Cast Helper</p>
+        <h1>抓到链接后，直接推到电视</h1>
+        <p class="subtitle">监听网页里的 m3u8 请求，再通过 DLNA 把地址发给小米电视或其他兼容渲染设备。</p>
       </div>
       <button id="refreshButton" class="ghost-button" type="button">刷新</button>
     </header>
@@ -21,7 +21,7 @@
       <div class="panel-head">
         <div>
           <h2>电视设置</h2>
-          <p class="panel-note">推荐先填写小米电视的 DLNA 描述地址，扩展会自动解析 AVTransport 控制地址。</p>
+          <p class="panel-note">推荐优先使用下面的局域网扫描；如果你已经知道设备地址，也可以手动填写。</p>
         </div>
         <span id="deviceStatus" class="status-pill">未配置</span>
       </div>
@@ -50,6 +50,34 @@
     <section class="panel">
       <div class="panel-head">
         <div>
+          <h2>局域网扫描</h2>
+          <p class="panel-note">扫描常见的 DLNA 描述地址，并筛出支持 AVTransport 的可投屏设备。</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>扫描网段</span>
+        <input id="scanSubnet" type="text" placeholder="例如：192.168.1">
+      </label>
+
+      <div class="actions">
+        <button id="scanDevicesButton" type="button">扫描设备</button>
+        <button id="guessSubnetButton" class="ghost-button" type="button">猜测网段</button>
+      </div>
+
+      <p id="scanStatus" class="scan-meta">将扫描输入网段下的常见 DLNA 端口和描述地址。</p>
+
+      <div id="discoveredList" class="capture-list empty">
+        <div class="empty-state">
+          <strong>还没有扫描到设备</strong>
+          <p>如果没扫到，请把网段改成你的局域网前缀，例如 `192.168.0`、`192.168.1` 或 `192.168.31`。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
           <h2>手动投屏</h2>
           <p class="panel-note">可以直接粘贴一个 m3u8 地址，或者从下面的捕获记录里选一个。</p>
         </div>
@@ -70,7 +98,7 @@
         <button id="copyManualButton" class="ghost-button" type="button">复制链接</button>
       </div>
 
-      <p class="warning">如果该地址依赖 Cookie、Referer、鉴权 Header 或短时签名，电视可能无法直接拉流。</p>
+      <p class="warning">如果该地址依赖 Cookie、Referer、登录态或短时签名，电视端可能无法直接拉流。</p>
     </section>
 
     <section class="panel">
